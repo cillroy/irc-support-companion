@@ -1,0 +1,8 @@
+{
+  "app": {"title":"Support Case Manager","subtitle":"Case Manager"},
+  "irc": {"network":"example.org","support_channels":["#support"],"allowed_queries":["your_nick"]},
+  "profiles": {"allowed_hosts":["example.org","www.example.org"],"path_prefix":"profile"},
+  "branding": {"logo_local":"assets/logo.png","logo_url":"","favicon_local":"assets/favicon.ico","favicon_url":""},
+  "appearance": {"default_theme":"Light"},
+  "case_manager": {"default_filter":"Active"}
+}
