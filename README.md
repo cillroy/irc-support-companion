@@ -64,9 +64,9 @@ A practical layout under the mIRC scripts directory is:
 %APPDATA%\mIRC\scripts\Support-Companion\
 ```
 
-Place `support_companion.py` and `config.json` there. Configure the mIRC bridge/script to launch `support_companion.py` with the request ID, mode, and `handoff` output directory expected by your integration.
+Place `support_companion.py`, `config.json`, and `support_companion.ini` there. Edit the three path lines in `support_companion.ini` (Python executable, app path, handoff folder), then load the `.ini` in mIRC (Alt+R → File → Load). Also update the channel/query/network guard near the top of the script for your site.
 
-The Python application writes the handoff output locally. Keep user-specific paths in the local mIRC configuration rather than hard-coding them into the Python application.
+The Python application writes the handoff output locally. Do not commit a copy of the `.ini` that contains your real username or absolute install paths.
 
 ## Configuration
 
