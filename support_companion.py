@@ -563,6 +563,7 @@ class App:
         self.loading=True; self.case_id=uuid.uuid4().hex; self.created_at=now()
         for v,val in ((self.profile_name,""),(self.status,"Started"),(self.mode,"Basic"),(self.email,""),(self.profile,""),(self.speed,"")): v.set(val)
         self.notes.delete("1.0","end"); self.message.delete("1.0","end"); self.loading=False; self.rebuild(); self.info.set("New unsaved case"); self.set_main_baseline(saved=False); self.main_original["__new_case__"]=False; self.dirty=True; self.dirty_text.set("● NEW UNSAVED CASE"); self.dirty_label.configure(style="Dirty.TLabel")
+        self.refresh_cases(); self.list.selection_clear(0,"end")
     def record(self):
         return {"case_id":self.case_id,"profile_name":clean(self.profile_name.get(),120),"status":self.status.get(),"mode":MODE_LABELS.get(self.mode.get(),"basic"),"email":clean(self.email.get(),160),"profile_url":clean(self.profile.get(),350),"speedtest_url":clean(self.speed.get(),350),"notes":self.notes.get("1.0","end-1c").strip()[:5000],"message":clean(self.message.get("1.0","end-1c"),430),"created_at":self.created_at or now(),"updated_at":now()}
     def save_case(self,quiet=False):
