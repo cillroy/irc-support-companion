@@ -217,7 +217,7 @@ class App:
         ToolTip(self.btn_new,"Start a new blank case (Ctrl+N)")
         ToolTip(self.btn_rebuild,"Rebuild the message from the current mode and account fields (Ctrl+R)")
         ToolTip(self.btn_save,"Save this case to its current status folder (Ctrl+S)")
-        ToolTip(self.btn_send,"Validate, save as Submitted, and hand the message to mIRC (Ctrl+Enter)")
+        ToolTip(self.btn_send,"Save this case as Submitted, then hand the message to mIRC (Ctrl+Enter)")
         for v in (self.email,self.profile,self.speed): v.trace_add("write",lambda *_: self.auto_rebuild())
         self.mode.trace_add("write",lambda *_: self.auto_rebuild())
         self.profile_name.trace_add("write",lambda *_:self.update_summary()); self.status.trace_add("write",lambda *_:self.update_summary())
@@ -497,12 +497,23 @@ class App:
             idx=self.visible.index(self.case_id); self.list.selection_set(idx); self.list.activate(idx); self.list.see(idx)
     def send(self):
         mode=MODE_LABELS.get(self.mode.get(),"basic"); email=clean(self.email.get(),160); profile=clean(self.profile.get(),350); speed=clean(self.speed.get(),350); msg=clean(self.message.get("1.0","end-1c"),430)
+        if not self.profile_name.get().strip():
+            name=self.profile_name_from_url(profile)
+            if name:self.profile_name.set(name)
+        if not self.profile_name.get().strip(): return self.modal("Validation error","Profile name is required before sending.","error")
         if not valid_email(email): return self.modal("Validation error","Enter a valid email address.","error")
         if not valid_url(profile): return self.modal("Validation error","Profile URL must start with http:// or https://.","error")
         if mode!="basic" and not valid_url(speed): return self.modal("Validation error","Speed Test URL must start with http:// or https://.","error")
         if not msg or any(x in msg for x in ("[EMAIL]","[PROFILE URL]","[SPEED TEST URL]")): return self.modal("Validation error","Complete all required fields and remove any placeholders.","error")
+        previous_status=self.status.get() or "Started"
         self.status.set("Submitted")
-        if not self.save_case(quiet=True): return
+        if not self.save_case(quiet=True):
+            self.status.set(previous_status)
+            return
+        saved=self.store.get(self.case_id)
+        if not saved or saved.get("status")!="Submitted":
+            self.status.set(previous_status)
+            return self.modal("Save error","The case could not be saved before sending to mIRC.","error")
         out=Path(self.args.outdir).resolve(); out.mkdir(parents=True,exist_ok=True); final=out/f"response_{self.args.request_id}.txt"
         fd,tmp=tempfile.mkstemp(prefix="handoff_",suffix=".tmp",dir=out,text=True)
         try:
@@ -510,7 +521,8 @@ class App:
             os.replace(tmp,final)
         finally:
             if os.path.exists(tmp):os.unlink(tmp)
-        self.info.set("Submitted and handed to mIRC."); self.root.after(350,self.root.destroy)
+        self.info.set("Saved as Submitted and handed to mIRC.")
+        self.modal("Sent to mIRC","Case saved as Submitted and the message was handed to mIRC.","success")
 
 def main():
     p=argparse.ArgumentParser(); p.add_argument("--request-id",required=True); p.add_argument("--mode",choices=TEMPLATES,default="basic"); p.add_argument("--outdir",required=True); p.add_argument("--cases")
