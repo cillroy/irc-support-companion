@@ -7,7 +7,7 @@ from urllib.parse import urlparse, unquote
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-TEMPLATES={
+DEFAULT_TEMPLATES={
  "basic":"mods can you confirm the email {email} matches the account {profile}",
  "disabled":"mods can you confirm the email {email} matches the account {profile} : Speed Test {speedtest} : the account has been disabled and would like to resolve the issue",
  "ratio":"mods can you confirm the email {email} matches the account {profile} : Speed Test {speedtest} : the account was disabled due to a low ratio and would like to fix it",
@@ -25,7 +25,8 @@ DEFAULT_CONFIG={
  "irc":{"network":"","support_channels":[],"allowed_queries":[]},
  "profiles":{"allowed_hosts":[],"path_prefix":"profile"},
  "appearance":{"default_theme":"Light"},
- "case_manager":{"default_filter":"Active"}
+ "case_manager":{"default_filter":"Active"},
+ "messages":dict(DEFAULT_TEMPLATES),
 }
 
 def clean(v,limit=1000):
@@ -210,7 +211,7 @@ class App:
         self.setup_brand_logo()
         self.sidebar_subtitle=tk.StringVar(value=self.config.get("app",{}).get("subtitle","Case Manager"))
         ttk.Label(left,textvariable=self.sidebar_subtitle,style="Brand.TLabel").pack(anchor="w",pady=(0,12))
-        self.btn_settings=ttk.Button(left,text="⚙  Settings    Ctrl+,",command=self.open_settings); self.btn_settings.pack(fill="x",pady=(0,10))
+        self.btn_settings=ttk.Button(left,text="⚙  Settings",command=self.open_settings); self.btn_settings.pack(fill="x",pady=(0,10))
         ttk.Label(left,text="◐   Appearance",style="Subtle.TLabel").pack(anchor="w",pady=(2,2))
         self.theme_toggle=ttk.Button(left,command=self.toggle_theme,style="ThemeToggle.TButton"); self.theme_toggle.pack(fill="x",pady=(5,2))
         ttk.Label(left,text="≡   Status filter",style="Subtle.TLabel").pack(anchor="w",pady=(8,2))
@@ -221,9 +222,9 @@ class App:
         self.search=tk.StringVar(); se=ttk.Entry(left,textvariable=self.search,width=32); se.pack(fill="x",pady=(5,5)); se.bind("<KeyRelease>",lambda e:self.refresh_cases())
         case_actions=ttk.Frame(left,style="Card.TFrame"); case_actions.pack(side="bottom",fill="x",pady=(8,0))
         self.btn_rescan=ttk.Button(case_actions,text="↻  Rescan / Recover",command=self.rescan_cases); self.btn_rescan.pack(fill="x",pady=(0,6))
-        self.btn_delete=ttk.Button(case_actions,text="✕  Delete Case    Del",command=self.delete_case); self.btn_delete.pack(fill="x")
-        ToolTip(self.btn_rescan,"Rebuild the case list from files on disk and import any legacy cases.json backups")
-        ToolTip(self.btn_delete,"Permanently delete the selected case (Delete)")
+        self.btn_delete=ttk.Button(case_actions,text="✕  Delete Case",command=self.delete_case); self.btn_delete.pack(fill="x")
+        ToolTip(self.btn_rescan,"Rebuild the case list from files on disk and import any legacy cases.json backups.")
+        ToolTip(self.btn_delete,"Permanently delete the selected case.\nKeyboard: Delete")
         case_list_frame=ttk.Frame(left,style="Card.TFrame"); case_list_frame.pack(fill="both",expand=True)
         self.list=tk.Listbox(case_list_frame,width=36,height=8)
         case_scroll=ttk.Scrollbar(case_list_frame,orient="vertical",command=self.list.yview); self.list.configure(yscrollcommand=case_scroll.set)
@@ -262,14 +263,14 @@ class App:
         footer=ttk.Frame(footer_shell,style="ActionBar.TFrame",padding=(14,11)); footer.pack(fill="x")
         self.dirty_text=tk.StringVar(value="✓ SAVED"); self.dirty_label=ttk.Label(footer,textvariable=self.dirty_text,style="Saved.TLabel"); self.dirty_label.pack(side="left",padx=(0,14))
         ttk.Label(footer,text="ACTIONS",style="ActionLabel.TLabel").pack(side="left",padx=(0,14))
-        self.btn_new=ttk.Button(footer,text="＋  New Case    Ctrl+N",command=self.new_case); self.btn_new.pack(side="left",padx=(0,6))
-        self.btn_rebuild=ttk.Button(footer,text="↻  Rebuild    Ctrl+R",command=self.rebuild); self.btn_rebuild.pack(side="left",padx=6)
-        self.btn_save=ttk.Button(footer,text="▣  Save Case    Ctrl+S",command=self.save_case); self.btn_save.pack(side="left",padx=6)
-        self.btn_send=ttk.Button(footer,text="➜  Send to mIRC    Ctrl+Enter",command=self.send,style="Accent.TButton"); self.btn_send.pack(side="right")
-        ToolTip(self.btn_new,"Start a new blank case (Ctrl+N)")
-        ToolTip(self.btn_rebuild,"Rebuild the message from the current mode and account fields (Ctrl+R)")
-        ToolTip(self.btn_save,"Save this case to its current status folder (Ctrl+S)")
-        ToolTip(self.btn_send,"Save this case as Submitted, then hand the message to mIRC (Ctrl+Enter)")
+        self.btn_new=ttk.Button(footer,text="＋  New Case",command=self.new_case); self.btn_new.pack(side="left",padx=(0,6))
+        self.btn_rebuild=ttk.Button(footer,text="↻  Rebuild",command=self.rebuild); self.btn_rebuild.pack(side="left",padx=6)
+        self.btn_save=ttk.Button(footer,text="▣  Save Case",command=self.save_case); self.btn_save.pack(side="left",padx=6)
+        self.btn_send=ttk.Button(footer,text="➜  Send to IRC",command=self.send,style="Accent.TButton"); self.btn_send.pack(side="right")
+        ToolTip(self.btn_new,"Start a new blank case.\nKeyboard: Ctrl+N")
+        ToolTip(self.btn_rebuild,"Rebuild the message from the current mode and account fields.\nKeyboard: Ctrl+R")
+        ToolTip(self.btn_save,"Save this case to its current status folder.\nKeyboard: Ctrl+S")
+        ToolTip(self.btn_send,"Save this case as Submitted, then hand the message to IRC.\nKeyboard: Ctrl+Enter")
         for v in (self.email,self.profile,self.speed): v.trace_add("write",lambda *_: self.auto_rebuild())
         self.mode.trace_add("write",lambda *_: self.auto_rebuild())
         self.profile_name.trace_add("write",lambda *_:self.update_summary()); self.status.trace_add("write",lambda *_:self.update_summary())
@@ -277,7 +278,7 @@ class App:
         self.profile.trace_add("write",self.profile_changed)
         self.notes.bind("<<Modified>>",self.main_text_modified,add="+"); self.message.bind("<<Modified>>",self.main_text_modified,add="+")
         self.notes.edit_modified(False); self.message.edit_modified(False)
-        ToolTip(self.btn_settings,"⚙ Settings\nEdit application, IRC, branding, appearance, and profile URL settings.\nKeyboard: Ctrl+, ")
+        ToolTip(self.btn_settings,"Edit application, IRC, branding, appearance, and profile URL settings.\nKeyboard: Ctrl+,")
         ToolTip(self.theme_toggle,"◐ Toggle appearance\nSwitch between Light and Dark. The choice is saved immediately.")
         ToolTip(sf,"Filter the case list by status")
         ToolTip(self.list,"Select a saved case to open it")
@@ -318,7 +319,7 @@ class App:
         self.sidebar_subtitle.set(newcfg.get("app",{}).get("subtitle","Case Manager")); self.status_filter.set(newcfg.get("case_manager",{}).get("default_filter","Active")); self.refresh_cases()
         theme=newcfg.get("appearance",{}).get("default_theme","Light")
         if theme in THEMES:self.theme_name.set(theme); self.apply_theme()
-        win.destroy(); self.modal("Settings saved","Settings were saved successfully. Branding path changes take effect on the next launch.","success")
+        win.destroy(); self.modal("Settings saved","Settings were saved successfully. Message template changes apply when you click Rebuild.","success")
     def confirm_action(self,parent,title,message,confirm_label,on_confirm,accent="#d99100"):
         c=THEMES[self.theme_name.get()]; win=tk.Toplevel(parent); win.title(title); win.transient(parent); win.grab_set(); win.resizable(False,False); win.configure(bg=c["bg"])
         box=tk.Frame(win,bg=c["panel"],padx=18,pady=18); box.pack(fill="both",expand=True,padx=2,pady=2)
@@ -336,7 +337,7 @@ class App:
     def confirm_discard_settings(self,parent,on_discard):
         self.confirm_action(parent,"Unsaved settings","Settings have changed. Discard the pending changes?","Discard",on_discard)
     def open_settings(self):
-        c=THEMES[self.theme_name.get()]; win=tk.Toplevel(self.root); win.title("Settings"); win.transient(self.root); win.grab_set(); win.geometry("680x650"); win.minsize(560,460); win.configure(bg=c["bg"])
+        c=THEMES[self.theme_name.get()]; win=tk.Toplevel(self.root); win.title("Settings"); win.transient(self.root); win.grab_set(); win.geometry("720x760"); win.minsize(560,460); win.configure(bg=c["bg"])
         shell=tk.Frame(win,bg=c["bg"]); shell.pack(fill="both",expand=True,padx=12,pady=12)
         footer=tk.Frame(shell,bg=c["panel"],highlightthickness=1,highlightbackground=c["accent"],padx=14,pady=11); footer.pack(side="bottom",fill="x",pady=(10,0))
         host=tk.Frame(shell,bg=c["bg"]); host.pack(side="top",fill="both",expand=True)
@@ -345,7 +346,7 @@ class App:
         def wheel(e): canvas.yview_scroll(int(-1*(e.delta/120)),"units")
         canvas.bind("<Enter>",lambda e:canvas.bind_all("<MouseWheel>",wheel)); canvas.bind("<Leave>",lambda e:canvas.unbind_all("<MouseWheel>"))
         tk.Label(body,text="⚙  Settings",bg=c["panel"],fg=c["text"],font=("Segoe UI Semibold",20),anchor="w").grid(row=0,column=0,columnspan=2,sticky="w",pady=(0,14)); self.settings_change_note=tk.Label(body,text="No pending changes",bg=c["panel"],fg=c["muted"],font=("Segoe UI",9),anchor="e"); self.settings_change_note.grid(row=0,column=1,sticky="e")
-        cfg=json.loads(json.dumps(self.config)); entries={}; widgets={}; originals={}
+        cfg=json.loads(json.dumps(self.config)); entries={}; widgets={}; originals={}; msg_texts={}
         fields=[("Application title","app.title"),("Sidebar subtitle","app.subtitle"),("IRC network","irc.network"),("Support channels (comma separated)","irc.support_channels"),("Allowed queries (comma separated)","irc.allowed_queries"),("Profile hosts (comma separated)","profiles.allowed_hosts"),("Profile path prefix","profiles.path_prefix"),("Local logo path","branding.logo_local"),("Remote logo URL","branding.logo_url"),("Local favicon path","branding.favicon_local"),("Remote favicon URL","branding.favicon_url")]
         def getv(path):
             a,b=path.split("."); v=cfg.get(a,{}).get(b,""); return ", ".join(v) if isinstance(v,list) else str(v)
@@ -361,8 +362,27 @@ class App:
         settings_theme_btn=ttk.Button(body,command=toggle_settings_theme,style="ThemeToggle.TButton"); settings_theme_btn.grid(row=r,column=1,sticky="ew",pady=4); refresh_settings_theme_button(); ToolTip(settings_theme_btn,"◐ Toggle default appearance")
         r+=1
         filter_label=tk.Label(body,text="≡  Default case filter",bg=c["panel"],fg=c["text"],anchor="w"); filter_label.grid(row=r,column=0,sticky="w",pady=6); filt=tk.StringVar(); filt.set(cfg.get("case_manager",{}).get("default_filter","Active")); originals["case_manager.default_filter"]=filt.get(); filter_box=ttk.Combobox(body,textvariable=filt,values=("Active","All")+STATUSES,state="readonly"); filter_box.grid(row=r,column=1,sticky="ew",pady=4); body.columnconfigure(1,weight=1)
+        r+=1
+        tk.Label(body,text="▣  Message templates",bg=c["panel"],fg=c["text"],font=("Segoe UI Semibold",11),anchor="w").grid(row=r,column=0,columnspan=2,sticky="w",pady=(14,4))
+        r+=1
+        tk.Label(body,text="Use placeholders {email}, {profile}, and {speedtest}.",bg=c["panel"],fg=c["muted"],font=("Segoe UI",9),anchor="w").grid(row=r,column=0,columnspan=2,sticky="w",pady=(0,8))
+        msg_fields=[("Basic message","messages.basic"),("Disabled message","messages.disabled"),("Low Ratio message","messages.ratio")]
+        for label,path in msg_fields:
+            r+=1
+            lab=tk.Label(body,text="✎  "+label,bg=c["panel"],fg=c["text"],anchor="w",font=("Segoe UI",9)); lab.grid(row=r,column=0,columnspan=2,sticky="w",pady=(6,2))
+            r+=1
+            border=tk.Frame(body,bg=c["muted"],padx=2,pady=2); border.grid(row=r,column=0,columnspan=2,sticky="ew",pady=(0,4))
+            text=tk.Text(border,height=3,wrap="word",bg=c["field"],fg=c["text"],insertbackground=c["text"],relief="flat",bd=0,font=("Segoe UI",10),padx=8,pady=6)
+            text.insert("1.0", cfg.get("messages",{}).get(path.split(".",1)[1], DEFAULT_TEMPLATES.get(path.split(".",1)[1],""))); text.pack(fill="x"); text.edit_modified(False)
+            originals[path]=text.get("1.0","end-1c"); msg_texts[path]=text; widgets[path]=(border,lab)
+            ToolTip(text,"Edit the default IRC message for this mode.\nPlaceholders: {email} {profile} {speedtest}")
+            def on_msg_modified(event, widget=text):
+                if widget.edit_modified(): widget.edit_modified(False); refresh_tracking()
+            text.bind("<<Modified>>",on_msg_modified)
         def changed_map():
-            changes={path:(var.get()!=originals[path]) for path,var in entries.items()}; changes["appearance.default_theme"]=theme.get()!=originals["appearance.default_theme"]; changes["case_manager.default_filter"]=filt.get()!=originals["case_manager.default_filter"]; return changes
+            changes={path:(var.get()!=originals[path]) for path,var in entries.items()}
+            for path,text in msg_texts.items(): changes[path]=text.get("1.0","end-1c")!=originals[path]
+            changes["appearance.default_theme"]=theme.get()!=originals["appearance.default_theme"]; changes["case_manager.default_filter"]=filt.get()!=originals["case_manager.default_filter"]; return changes
         def refresh_tracking(*_):
             changes=changed_map(); count=sum(changes.values())
             for path,(border,lab) in widgets.items():
@@ -384,6 +404,10 @@ class App:
                 a,b=path.split("."); value=var.get().strip(); cfg.setdefault(a,{})
                 if path in ("irc.support_channels","irc.allowed_queries","profiles.allowed_hosts"): value=[x.strip() for x in value.split(",") if x.strip()]
                 cfg[a][b]=value
+            cfg.setdefault("messages",{})
+            for path,text in msg_texts.items():
+                a,b=path.split("."); value=text.get("1.0","end-1c").strip() or DEFAULT_TEMPLATES.get(b,"")
+                cfg.setdefault(a,{})[b]=value
             cfg.setdefault("appearance",{})["default_theme"]=theme.get(); cfg.setdefault("case_manager",{})["default_filter"]=filt.get(); win.unbind_all("<Escape>"); self.save_config(cfg,win)
         buttons=tk.Frame(footer,bg=c["panel"]); buttons.pack(anchor="center"); cancel_btn=tk.Button(buttons,text="✕  Cancel   Esc",command=cancel_settings,padx=18,pady=7); cancel_btn.pack(side="left",padx=6); save_btn=tk.Button(buttons,text="✓  Save Settings   Ctrl+S",command=commit,bg=c["accent"],fg="#fff",relief="flat",padx=20,pady=7); save_btn.pack(side="left",padx=6)
         ToolTip(cancel_btn,"✕ Cancel changes\nKeyboard: Esc"); ToolTip(save_btn,"✓ Save configuration to config.json\nKeyboard: Ctrl+S")
@@ -518,12 +542,23 @@ class App:
     def main_text_modified(self,event):
         w=event.widget
         if w.edit_modified(): w.edit_modified(False); self.refresh_main_tracking()
+    def message_templates(self):
+        out=dict(DEFAULT_TEMPLATES); msgs=self.config.get("messages",{})
+        if isinstance(msgs,dict):
+            for key,value in msgs.items():
+                if key in out and isinstance(value,str) and value.strip(): out[key]=value.strip()
+        return out
+    def apply_template(self,tmpl,vals):
+        out=str(tmpl or "")
+        for key,value in vals.items(): out=out.replace("{"+key+"}",value)
+        return out
     def auto_rebuild(self):
         if not self.loading: self.rebuild()
     def rebuild(self):
         mode=MODE_LABELS.get(self.mode.get(),"basic")
         vals={"email":clean(self.email.get(),160) or "[EMAIL]","profile":clean(self.profile.get(),350) or "[PROFILE URL]","speedtest":clean(self.speed.get(),350) or "[SPEED TEST URL]"}
-        self.message.delete("1.0","end"); self.message.insert("1.0",TEMPLATES[mode].format(**vals))
+        tmpl=self.message_templates().get(mode,DEFAULT_TEMPLATES["basic"])
+        self.message.delete("1.0","end"); self.message.insert("1.0",self.apply_template(tmpl,vals))
     def new_case(self):
         self.loading=True; self.case_id=uuid.uuid4().hex; self.created_at=now()
         for v,val in ((self.profile_name,""),(self.status,"Started"),(self.mode,"Basic"),(self.email,""),(self.profile,""),(self.speed,"")): v.set(val)
@@ -598,7 +633,7 @@ class App:
         saved=self.store.get(self.case_id)
         if not saved or saved.get("status")!="Submitted":
             self.status.set(previous_status)
-            return self.modal("Save error","The case could not be saved before sending to mIRC.","error")
+            return self.modal("Save error","The case could not be saved before sending to IRC.","error")
         out=Path(self.args.outdir).resolve(); out.mkdir(parents=True,exist_ok=True); final=out/f"response_{self.args.request_id}.txt"
         fd,tmp=tempfile.mkstemp(prefix="handoff_",suffix=".tmp",dir=out,text=True)
         try:
@@ -606,11 +641,11 @@ class App:
             os.replace(tmp,final)
         finally:
             if os.path.exists(tmp):os.unlink(tmp)
-        self.info.set("Saved as Submitted and handed to mIRC.")
-        self.modal("Sent to mIRC","Case saved as Submitted and the message was handed to mIRC.","success")
+        self.info.set("Saved as Submitted and handed to IRC.")
+        self.modal("Sent to IRC","Case saved as Submitted and the message was handed to IRC.","success")
 
 def main():
-    p=argparse.ArgumentParser(); p.add_argument("--request-id",required=True); p.add_argument("--mode",choices=TEMPLATES,default="basic"); p.add_argument("--outdir",required=True); p.add_argument("--cases")
+    p=argparse.ArgumentParser(); p.add_argument("--request-id",required=True); p.add_argument("--mode",choices=tuple(DEFAULT_TEMPLATES),default="basic"); p.add_argument("--outdir",required=True); p.add_argument("--cases")
     a=p.parse_args();
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}",a.request_id): raise SystemExit("Invalid request id")
     if not a.cases: a.cases=str(Path(a.outdir).resolve().parent/"cases.json")

@@ -78,6 +78,7 @@ The Python application writes the handoff output locally. Do not commit a copy o
 - `branding`: optional local/remote logo and favicon paths.
 - `appearance`: default Light/Dark appearance.
 - `case_manager`: default case filtering.
+- `messages`: Basic, Disabled, and Low Ratio templates. Use `{email}`, `{profile}`, and `{speedtest}` placeholders.
 
 Logo and icon values may be blank. Branding is optional.
 

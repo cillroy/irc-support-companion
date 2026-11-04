@@ -4,5 +4,10 @@
   "profiles": {"allowed_hosts":["example.org","www.example.org"],"path_prefix":"profile"},
   "branding": {"logo_local":"assets/logo.png","logo_url":"","favicon_local":"assets/favicon.ico","favicon_url":""},
   "appearance": {"default_theme":"Light"},
-  "case_manager": {"default_filter":"Active"}
+  "case_manager": {"default_filter":"Active"},
+  "messages": {
+    "basic": "mods can you confirm the email {email} matches the account {profile}",
+    "disabled": "mods can you confirm the email {email} matches the account {profile} : Speed Test {speedtest} : the account has been disabled and would like to resolve the issue",
+    "ratio": "mods can you confirm the email {email} matches the account {profile} : Speed Test {speedtest} : the account was disabled due to a low ratio and would like to fix it"
+  }
 }
