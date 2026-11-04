@@ -61,24 +61,54 @@ class Store:
     def summary(self,c):return {k:c.get(k) for k in ("case_id","profile_name","status","created_at","updated_at","mode")}
     def save_index(self):self.atomic_write(self.index_path,self.index)
     def rebuild_index(self):
-        items=[]
+        by_id={}
         for status in self.STATUSES:
             for f in (self.root/status).glob("*.json"):
                 try:
-                    c=json.loads(f.read_text(encoding="utf-8")); items.append(self.summary(c))
+                    c=json.loads(f.read_text(encoding="utf-8"))
+                    if isinstance(c,dict) and c.get("case_id"): by_id[c["case_id"]]=self.summary(c)
                 except Exception:pass
-        self.index={"version":2,"cases":items}; self.save_index()
+        self.index={"version":2,"cases":list(by_id.values())}; self.save_index(); return len(by_id)
+    def import_cases_payload(self,data):
+        count=0; cases=[]
+        if isinstance(data,dict): cases=data.get("cases",[])
+        elif isinstance(data,list): cases=data
+        for c in cases:
+            if isinstance(c,dict) and c.get("case_id"):
+                if "status" not in c: c["status"]="Started"
+                self.upsert(c); count+=1
+        return count
     def migrate_legacy(self):
         marker=self.root/".migration_complete"
         if marker.exists() or not self.legacy.exists():return
         try:
-            d=json.loads(self.legacy.read_text(encoding="utf-8")); cases=d.get("cases",[]) if isinstance(d,dict) else []
-            for c in cases:
-                if isinstance(c,dict) and c.get("case_id"):self.upsert(c)
+            d=json.loads(self.legacy.read_text(encoding="utf-8")); self.import_cases_payload(d)
             backup=self.legacy.with_suffix(self.legacy.suffix+".migrated.bak")
             if not backup.exists():self.legacy.replace(backup)
             marker.write_text(datetime.now().astimezone().isoformat(timespec="seconds"),encoding="utf-8")
         except Exception:pass
+    def recover(self):
+        imported=0
+        candidates=[self.legacy,self.legacy.with_suffix(self.legacy.suffix+".migrated.bak"),self.root/"cases.json",self.root.parent/"cases.json",self.root.parent/"cases.json.migrated.bak"]
+        seen=set()
+        for path in candidates:
+            try: key=str(path.resolve())
+            except OSError: key=str(path)
+            if key in seen or not path.exists() or not path.is_file(): continue
+            seen.add(key)
+            try: imported+=self.import_cases_payload(json.loads(path.read_text(encoding="utf-8")))
+            except Exception: pass
+        for f in self.root.glob("*.json"):
+            if f.name=="index.json": continue
+            try:
+                c=json.loads(f.read_text(encoding="utf-8"))
+                if isinstance(c,dict) and c.get("case_id"):
+                    self.upsert(c); imported+=1
+                    try:f.unlink()
+                    except OSError:pass
+            except Exception:pass
+        indexed=self.rebuild_index()
+        return {"indexed":indexed,"imported":imported}
     def all(self):return list(self.index.get("cases",[]))
     def get(self,cid):
         meta=next((x for x in self.index.get("cases",[]) if x.get("case_id")==cid),None)
@@ -101,10 +131,27 @@ class Store:
             if old_path.exists() and old_path!=new_path:
                 try:old_path.unlink()
                 except OSError:pass
+        for status_name in self.STATUSES:
+            other=self.root/status_name/f"{cid}.json"
+            if other.exists() and other!=new_path:
+                try:other.unlink()
+                except OSError:pass
         summary=self.summary(c)
         if old:old.clear(); old.update(summary)
         else:self.index.setdefault("cases",[]).append(summary)
         self.save_index()
+    def delete(self,cid):
+        removed=False
+        for status in self.STATUSES:
+            f=self.root/status/f"{cid}.json"
+            if f.exists():
+                try:f.unlink(); removed=True
+                except OSError:pass
+        before=len(self.index.get("cases",[]))
+        self.index["cases"]=[x for x in self.index.get("cases",[]) if x.get("case_id")!=cid]
+        if len(self.index["cases"])!=before: removed=True
+        if removed:self.save_index()
+        return removed
 
 class ThemedModal:
     def __init__(self,app,title,message,kind="info"):
@@ -172,8 +219,13 @@ class App:
         sf.pack(fill="x",pady=(5,2)); sf.bind("<<ComboboxSelected>>",lambda e:self.refresh_cases())
         ttk.Label(left,text="⌕   Search",style="Subtle.TLabel").pack(anchor="w",pady=(8,2))
         self.search=tk.StringVar(); se=ttk.Entry(left,textvariable=self.search,width=32); se.pack(fill="x",pady=(5,5)); se.bind("<KeyRelease>",lambda e:self.refresh_cases())
+        case_actions=ttk.Frame(left,style="Card.TFrame"); case_actions.pack(side="bottom",fill="x",pady=(8,0))
+        self.btn_rescan=ttk.Button(case_actions,text="↻  Rescan / Recover",command=self.rescan_cases); self.btn_rescan.pack(fill="x",pady=(0,6))
+        self.btn_delete=ttk.Button(case_actions,text="✕  Delete Case    Del",command=self.delete_case); self.btn_delete.pack(fill="x")
+        ToolTip(self.btn_rescan,"Rebuild the case list from files on disk and import any legacy cases.json backups")
+        ToolTip(self.btn_delete,"Permanently delete the selected case (Delete)")
         case_list_frame=ttk.Frame(left,style="Card.TFrame"); case_list_frame.pack(fill="both",expand=True)
-        self.list=tk.Listbox(case_list_frame,width=36,height=26)
+        self.list=tk.Listbox(case_list_frame,width=36,height=8)
         case_scroll=ttk.Scrollbar(case_list_frame,orient="vertical",command=self.list.yview); self.list.configure(yscrollcommand=case_scroll.set)
         case_scroll.pack(side="right",fill="y",padx=(6,0)); self.list.pack(side="left",fill="both",expand=True); self.list.bind("<<ListboxSelect>>",self.open_selected)
         self.profile_name=tk.StringVar(); self.status=tk.StringVar(value="Started"); self.mode=tk.StringVar(value="Basic"); self.email=tk.StringVar(); self.profile=tk.StringVar(); self.speed=tk.StringVar(); self.main_original={}; self.main_field_widgets={}; self.main_tracking_ready=False
@@ -237,8 +289,13 @@ class App:
         self.root.bind("<Control-S>",lambda e:self.save_case())
         self.root.bind("<Control-Return>",lambda e:self.send())
         self.root.bind("<Control-comma>",lambda e:self.open_settings())
+        self.root.bind("<Delete>",self.delete_key)
         self.root.bind("<Escape>",lambda e:self.root.focus())
-        self.apply_theme(); self.refresh_cases(); self.new_case(); self.update_summary()
+        self.apply_theme(); self.rescan_cases(quiet=True); self.new_case(); self.update_summary()
+    def delete_key(self,event=None):
+        w=self.root.focus_get()
+        if isinstance(w,(tk.Entry,tk.Text,ttk.Entry,ttk.Combobox)): return
+        self.delete_case()
     def profile_name_from_url(self,value):
         try:
             u=urlparse(value.strip()); host=(u.hostname or "").lower(); pcfg=self.config.get("profiles",{})
@@ -262,17 +319,22 @@ class App:
         theme=newcfg.get("appearance",{}).get("default_theme","Light")
         if theme in THEMES:self.theme_name.set(theme); self.apply_theme()
         win.destroy(); self.modal("Settings saved","Settings were saved successfully. Branding path changes take effect on the next launch.","success")
-    def confirm_discard_settings(self,parent,on_discard):
-        c=THEMES[self.theme_name.get()]; win=tk.Toplevel(parent); win.title("Unsaved settings"); win.transient(parent); win.grab_set(); win.resizable(False,False); win.configure(bg=c["bg"])
+    def confirm_action(self,parent,title,message,confirm_label,on_confirm,accent="#d99100"):
+        c=THEMES[self.theme_name.get()]; win=tk.Toplevel(parent); win.title(title); win.transient(parent); win.grab_set(); win.resizable(False,False); win.configure(bg=c["bg"])
         box=tk.Frame(win,bg=c["panel"],padx=18,pady=18); box.pack(fill="both",expand=True,padx=2,pady=2)
-        tk.Label(box,text="!",width=2,bg="#d99100",fg="#ffffff",font=("Segoe UI Semibold",15),padx=6,pady=4).grid(row=0,column=0,sticky="n",padx=(0,14))
-        tk.Label(box,text="Unsaved settings",bg=c["panel"],fg=c["text"],font=("Segoe UI Semibold",12)).grid(row=0,column=1,sticky="w")
-        tk.Label(box,text="Settings have changed. Discard the pending changes?",bg=c["panel"],fg=c["text"],font=("Segoe UI",10),justify="left").grid(row=1,column=1,sticky="w",pady=(5,14))
+        tk.Label(box,text="!",width=2,bg=accent,fg="#ffffff",font=("Segoe UI Semibold",15),padx=6,pady=4).grid(row=0,column=0,sticky="n",padx=(0,14))
+        tk.Label(box,text=title,bg=c["panel"],fg=c["text"],font=("Segoe UI Semibold",12)).grid(row=0,column=1,sticky="w")
+        tk.Label(box,text=message,bg=c["panel"],fg=c["text"],font=("Segoe UI",10),justify="left",wraplength=390).grid(row=1,column=1,sticky="w",pady=(5,14))
         bar=tk.Frame(box,bg=c["panel"]); bar.grid(row=2,column=1,sticky="e")
-        def keep(): win.grab_release(); win.destroy()
-        def discard(): win.grab_release(); win.destroy(); on_discard()
-        tk.Button(bar,text="Keep Editing",command=keep,padx=14,pady=6).pack(side="left",padx=5); tk.Button(bar,text="Discard",command=discard,bg="#d99100",fg="#fff",relief="flat",padx=14,pady=6).pack(side="left",padx=5)
-        win.bind("<Escape>",lambda e:keep()); win.bind("<Return>",lambda e:discard()); win.protocol("WM_DELETE_WINDOW",keep); win.update_idletasks(); x=parent.winfo_rootx()+(parent.winfo_width()-win.winfo_width())//2; y=parent.winfo_rooty()+(parent.winfo_height()-win.winfo_height())//2; win.geometry(f"+{max(x,0)}+{max(y,0)}")
+        def cancel(): 
+            try:win.grab_release()
+            except tk.TclError:pass
+            win.destroy()
+        def accept(): cancel(); on_confirm()
+        tk.Button(bar,text="Cancel",command=cancel,padx=14,pady=6).pack(side="left",padx=5); tk.Button(bar,text=confirm_label,command=accept,bg=accent,fg="#fff",relief="flat",padx=14,pady=6).pack(side="left",padx=5)
+        win.bind("<Escape>",lambda e:cancel()); win.bind("<Return>",lambda e:accept()); win.protocol("WM_DELETE_WINDOW",cancel); win.update_idletasks(); x=parent.winfo_rootx()+(parent.winfo_width()-win.winfo_width())//2; y=parent.winfo_rooty()+(parent.winfo_height()-win.winfo_height())//2; win.geometry(f"+{max(x,0)}+{max(y,0)}")
+    def confirm_discard_settings(self,parent,on_discard):
+        self.confirm_action(parent,"Unsaved settings","Settings have changed. Discard the pending changes?","Discard",on_discard)
     def open_settings(self):
         c=THEMES[self.theme_name.get()]; win=tk.Toplevel(self.root); win.title("Settings"); win.transient(self.root); win.grab_set(); win.geometry("680x650"); win.minsize(560,460); win.configure(bg=c["bg"])
         shell=tk.Frame(win,bg=c["bg"]); shell.pack(fill="both",expand=True,padx=12,pady=12)
@@ -484,10 +546,33 @@ class App:
             hay=" ".join(str(c.get(k,"")) for k in ("profile_name","email","status","notes")).lower()
             if q and q not in hay: continue
             self.visible.append(c["case_id"]); marker="▌ " if c.get("case_id")==self.case_id else "  "; self.list.insert("end",f"{marker}{c.get('profile_name','?')}  [{c.get('status','?')}]")
+    def rescan_cases(self,quiet=False):
+        result=self.store.recover()
+        if not quiet: self.status_filter.set("All")
+        self.refresh_cases()
+        self.info.set(f"Rescan complete: {result['indexed']} case(s) indexed")
+        if quiet: return result
+        extra=f" Imported or repaired {result['imported']} record(s) from legacy files." if result["imported"] else ""
+        self.modal("Rescan complete",f"Found {result['indexed']} case file(s) under cases/.{extra}\n\nStorage folder:\n{self.store.root}","success")
+        return result
+    def delete_case(self):
+        sel=self.list.curselection(); cid=None; label="this case"
+        if sel: cid=self.visible[sel[0]]
+        elif self.case_id and self.store.get(self.case_id): cid=self.case_id
+        if not cid: return self.modal("Delete case","Select a saved case to delete.","error")
+        meta=next((x for x in self.store.all() if x.get("case_id")==cid),None)
+        if meta and meta.get("profile_name"): label=f'"{meta.get("profile_name")}" [{meta.get("status","?")}]'
+        def do_delete():
+            if not self.store.delete(cid): return self.modal("Delete case","The case file could not be deleted.","error")
+            if self.case_id==cid: self.new_case()
+            self.refresh_cases(); self.info.set(f"Deleted case {label}"); self.modal("Deleted",f"Deleted {label}.","success")
+        self.confirm_action(self.root,"Delete case",f"Permanently delete {label}? This cannot be undone.","Delete",do_delete,accent="#c92a3d")
     def open_selected(self,event=None):
         sel=self.list.curselection()
         if not sel:return
-        c=self.store.get(self.visible[sel[0]]); self.loading=True; self.case_id=c["case_id"]; self.created_at=c.get("created_at")
+        c=self.store.get(self.visible[sel[0]])
+        if not c: return self.modal("Open case","That case file is missing. Try Rescan / Recover.","error")
+        self.loading=True; self.case_id=c["case_id"]; self.created_at=c.get("created_at")
         self.profile_name.set(c.get("profile_name","")); self.status.set(c.get("status","Started")); self.mode.set(REV_MODE.get(c.get("mode"),"Basic")); self.email.set(c.get("email","")); self.profile.set(c.get("profile_url","")); self.speed.set(c.get("speedtest_url",""))
         self.notes.delete("1.0","end"); self.notes.insert("1.0",c.get("notes","")); self.message.delete("1.0","end"); self.message.insert("1.0",c.get("message","") or "")
         self.loading=False
