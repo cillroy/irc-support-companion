@@ -574,7 +574,7 @@ class App:
         return True
     def refresh_cases(self):
         q=self.search.get().lower().strip() if hasattr(self,"search") else ""; self.visible=[]; self.list.delete(0,"end")
-        for c in sorted(self.store.all(),key=lambda x:x.get("updated_at",""),reverse=True):
+        for c in sorted(self.store.all(),key=lambda x:str(x.get("profile_name") or "").lower()):
             selected=self.status_filter.get()
             if selected=="Active" and c.get("status") not in ("Started","Waiting","Ready"): continue
             if selected not in ("Active","All") and c.get("status")!=selected: continue
